@@ -28,7 +28,7 @@ class AuthService {
       sub: user.id,
       role: user.role
     }
-    const token = jwt.sing(payload, config.jwtSecret);
+    const token = jwt.sign(payload, config.jwtSecret);
     return {
       user,
       token
@@ -42,8 +42,11 @@ class AuthService {
       throw boom.unauthorized();
     }
     const payload = { sub: user.id };
-    const token = jwt.sing(payload, config.jwtSecret);
-    const link = `http://myfrontend.com/recovery?token${token}`;
+    const token = jwt.sign(payload, config.jwtSecret, { expiresIn: '15min' });
+    const link = `http://myfrontend.com/recovery?token=${token}`;
+    await service.update(user.id, {
+      recoveryToken: token
+    })
     const mail = {
       from: config.smtpEmail, // sender address
       to: `${user.email}`, // list of receivers
@@ -52,6 +55,24 @@ class AuthService {
     }
     const rta = await this.sendMail(mail);
     return rta;
+  }
+
+  async changePassword(token, newPassword) {
+    try {
+      const payload = jwt.verify(token, config.jwtSecret);
+      const user = await service.findOne(payload.sub);
+      if (user.recoveryToken !== token) {
+        throw boom.unauthorized();
+      }
+      const hash = await bcrypt.hash(newPassword, 10);
+      await service.update(user.id, {
+        recoveryToken: null,
+        password: hash
+      });
+      return { message: 'Password changed' };
+    } catch (error) {
+      throw boom.unauthorized();
+    }
   }
 
 
